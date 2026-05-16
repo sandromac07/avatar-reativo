@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Avatar Reativo - Versão Corrigida</title>
+    <title>Avatar Reativo - Versão Final</title>
     <style>
         :root { --bg-color: #121212; }
         body {
@@ -67,7 +67,8 @@
         .control-group { margin-bottom: 15px; }
         .control-group label { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 5px; color: #ccc; }
         .control-group label span { color: #2196f3; font-weight: bold; }
-        input[type="range"] { width: 100%; }
+        input[type="range"], select { width: 100%; }
+        select { background: #222; color: white; padding: 8px; border: 1px solid #444; border-radius: 4px; }
         input[type="file"] { width: 100%; background: #222; padding: 8px; border-radius: 4px; border: 1px solid #444; color: #ccc; font-size: 12px; box-sizing: border-box; }
         button { width: 100%; padding: 10px; background: #4caf50; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; margin-bottom: 10px; }
         button:hover { opacity: 0.9; }
@@ -110,9 +111,21 @@
         </div>
 
         <h3>2. Controle de Áudio</h3>
-        <button id="start-btn">Ativar Microfone</button>
+        <div class="control-group">
+            <label>Escolha o seu Microfone:</label>
+            <select id="mic-select">
+                <option value="">Carregando dispositivos...</option>
+            </select>
+        </div>
+        
+        <button id="start-btn">Ligar Microfone Selecionado</button>
         <button id="test-mouth-btn" class="test-btn">Segure para Testar Boca Animada</button>
         
+        <div class="control-group">
+            <label for="gain-slider">Ganho (Sensibilidade Mic): <span id="gain-value">1.0</span>x</label>
+            <input type="range" id="gain-slider" min="1" max="10" step="0.5" value="1">
+        </div>
+
         <div class="control-group">
             <label for="gate-slider">Noise Gate (Corte): <span id="gate-value">15</span></label>
             <input type="range" id="gate-slider" min="0" max="100" value="15">
@@ -143,6 +156,7 @@
         const statusMouth = document.getElementById('status-mouth');
         const statusMic = document.getElementById('status-mic');
         const statusVolNum = document.getElementById('status-vol-num');
+        const micSelect = document.getElementById('mic-select');
 
         const sliders = {
             top: { input: document.getElementById('slider-top'), val: document.getElementById('top-value'), unit: 'px', prop: 'top' },
@@ -153,6 +167,8 @@
 
         const gateSlider = document.getElementById('gate-slider');
         const gateValue = document.getElementById('gate-value');
+        const gainSlider = document.getElementById('gain-slider');
+        const gainValue = document.getElementById('gain-value');
         const volumeBar = document.getElementById('volume-bar');
         const gateIndicator = document.getElementById('gate-indicator');
         
@@ -161,7 +177,7 @@
         const bgBtn = document.getElementById('bg-btn');
         const borderBtn = document.getElementById('border-btn');
 
-        let audioContext, analyser, dataArray;
+        let audioContext, analyser, dataArray, currentStream;
         let micActive = false;
         let manualTest = false;
 
@@ -175,14 +191,33 @@
             }
         }
 
+        async function listMicrophones() {
+            try {
+                // Pede uma permissão rápida apenas para conseguir ler os nomes dos microfones
+                const initialStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                initialStream.getTracks().forEach(track => track.stop());
+                
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                micSelect.innerHTML = '';
+                
+                let count = 0;
+                devices.forEach(device => {
+                    if (device.kind === 'audioinput') {
+                        const opt = document.createElement('option');
+                        opt.value = device.deviceId;
+                        opt.text = device.label || `Microfone ${++count}`;
+                        micSelect.appendChild(opt);
+                    }
+                });
+            } catch (err) {
+                micSelect.innerHTML = '<option value="">Permissão negada ou sem microfone</option>';
+            }
+        }
+
         function handleUpload(file, storageKey, imgElement) {
             const reader = new FileReader();
             reader.onload = function(e) {
-                try {
-                    localStorage.setItem(storageKey, e.target.result);
-                } catch (err) {
-                    console.log("GIF grande detectado. Carregando direto na tela de forma segura!");
-                }
+                try { localStorage.setItem(storageKey, e.target.result); } catch (err) {}
                 imgElement.src = e.target.result;
                 updateImgStatus();
             };
@@ -202,10 +237,13 @@
             gateValue.innerText = gateSlider.value;
             gateIndicator.style.left = gateSlider.value + '%';
             localStorage.setItem('db-gate', gateSlider.value);
+            gainValue.innerText = gainSlider.value;
+            localStorage.setItem('db-gain', gainSlider.value);
         }
 
         Object.keys(sliders).forEach(key => sliders[key].input.addEventListener('input', updateStyles));
         gateSlider.addEventListener('input', updateStyles);
+        gainSlider.addEventListener('input', updateStyles);
 
         testMouthBtn.addEventListener('mousedown', () => { manualTest = true; mouth.style.display = 'block'; });
         window.addEventListener('mouseup', () => { manualTest = false; if(!micActive) mouth.style.display = 'block'; });
@@ -222,9 +260,19 @@
 
         startBtn.addEventListener('click', async () => {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                if (currentStream) {
+                    currentStream.getTracks().forEach(track => track.stop());
+                }
+
+                const deviceId = micSelect.value;
+                const constraints = {
+                    audio: deviceId ? { deviceId: { exact: deviceId } } : true
+                };
+
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                currentStream = stream;
                 
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 if (audioContext.state === 'suspended') {
                     await audioContext.resume();
                 }
@@ -234,18 +282,17 @@
                 analyser.fftSize = 256;
                 source.connect(analyser);
                 
-                dataArray = new Uint8Array(analyser.frequencyBinCount);
+                dataArray = new Uint8Array(analyser.fftSize);
                 micActive = true;
                 
                 statusMic.innerText = "Conectado";
                 statusMic.className = "status-ok";
-                startBtn.style.background = "#555";
-                startBtn.innerText = "Microfone Ativo";
+                startBtn.style.background = "#2196f3";
+                startBtn.innerText = "Recolher Áudio/Trocar Mic";
 
                 function loop() {
                     if (manualTest) { requestAnimationFrame(loop); return; }
 
-                    // Mudança de leitura para Amplitude Real (Mais sensível a ruídos e fala)
                     analyser.getByteTimeDomainData(dataArray);
                     let maxDeviation = 0;
                     for (let i = 0; i < dataArray.length; i++) {
@@ -253,7 +300,10 @@
                         if (deviation > maxDeviation) maxDeviation = deviation;
                     }
                     
-                    let volume = (maxDeviation / 128) * 100;
+                    // Aplica o slider de Ganho multiplicado ao sinal de áudio bruto
+                    let mult = parseFloat(gainSlider.value);
+                    let volume = Math.min(((maxDeviation / 128) * 100) * mult, 100);
+                    
                     volumeBar.style.width = volume + '%';
                     statusVolNum.innerText = Math.round(volume);
 
@@ -270,9 +320,8 @@
                 loop();
 
             } catch (err) {
-                statusMic.innerText = "Erro / Bloqueado";
+                statusMic.innerText = "Erro ao Conectar";
                 statusMic.className = "status-error";
-                alert("Clique no cadeado da barra de endereço e permita o Microfone!");
             }
         });
 
@@ -283,12 +332,15 @@
             });
             const g = localStorage.getItem('db-gate');
             if (g !== null) gateSlider.value = g;
+            const gn = localStorage.getItem('db-gain');
+            if (gn !== null) gainSlider.value = gn;
 
             const i = localStorage.getItem('db-idle');
             if (i) idle.src = i;
             const m = localStorage.getItem('db-mouth');
             if (m) mouth.src = m;
 
+            listMicrophones();
             updateImgStatus();
             updateStyles();
         }
