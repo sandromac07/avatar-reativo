@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Avatar Reativo - Debug Pro</title>
+    <title>Avatar Reativo - Versão Corrigida</title>
     <style>
         :root { --bg-color: #121212; }
         body {
@@ -45,7 +45,7 @@
         .mouth-img {
             position: absolute;
             z-index: 2;
-            display: block; /* Mantém visível por padrão para ajuste inicial */
+            display: block; 
             object-fit: contain;
             outline: 1px dashed #ffeb3b; 
         }
@@ -77,7 +77,7 @@
         .status-ok { color: #4caf50; }
         .status-error { color: #f44336; }
         .volume-bar-container { width: 100%; height: 20px; background: #222; margin-top: 8px; border-radius: 4px; overflow: hidden; position: relative; border: 1px solid #444; }
-        #volume-bar { height: 100%; width: 0%; background: #4caf50; transition: width 0.02s ease; }
+        #volume-bar { height: 100%; width: 0%; background: #4caf50; transition: width 0.01s ease; }
         #gate-indicator { position: absolute; top: 0; bottom: 0; width: 3px; background: #f44336; }
     </style>
 </head>
@@ -166,11 +166,11 @@
         let manualTest = false;
 
         function updateImgStatus() {
-            if (idle.src && idle.src.startsWith('data:')) {
+            if (idle.src && idle.src.length > 100) {
                 statusIdle.innerText = "OK"; statusIdle.className = "status-ok";
                 idle.style.display = 'block';
             }
-            if (mouth.src && mouth.src.startsWith('data:')) {
+            if (mouth.src && mouth.src.length > 100) {
                 statusMouth.innerText = "OK"; statusMouth.className = "status-ok";
             }
         }
@@ -178,7 +178,11 @@
         function handleUpload(file, storageKey, imgElement) {
             const reader = new FileReader();
             reader.onload = function(e) {
-                localStorage.setItem(storageKey, e.target.result);
+                try {
+                    localStorage.setItem(storageKey, e.target.result);
+                } catch (err) {
+                    console.log("GIF grande detectado. Carregando direto na tela de forma segura!");
+                }
                 imgElement.src = e.target.result;
                 updateImgStatus();
             };
@@ -203,9 +207,8 @@
         Object.keys(sliders).forEach(key => sliders[key].input.addEventListener('input', updateStyles));
         gateSlider.addEventListener('input', updateStyles);
 
-        // Teste Manual Secundário (Clique e segure para forçar a boca)
         testMouthBtn.addEventListener('mousedown', () => { manualTest = true; mouth.style.display = 'block'; });
-        window.addEventListener('mouseup', () => { manualTest = false; if(micActive === false) mouth.style.display = 'block'; });
+        window.addEventListener('mouseup', () => { manualTest = false; if(!micActive) mouth.style.display = 'block'; });
 
         bgBtn.addEventListener('click', () => {
             document.documentElement.style.setProperty('--bg-color', document.documentElement.style.getPropertyValue('--bg-color') === '#00ff00' ? '#121212' : '#00ff00');
@@ -222,7 +225,6 @@
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 
-                // Correção essencial de segurança do Chrome/Edge
                 if (audioContext.state === 'suspended') {
                     await audioContext.resume();
                 }
@@ -243,20 +245,20 @@
                 function loop() {
                     if (manualTest) { requestAnimationFrame(loop); return; }
 
-                    analyser.getByteFrequencyData(dataArray);
-                    let total = 0;
-                    for (let i = 0; i < dataArray.length; i++) { total += dataArray[i]; }
-                    let average = total / dataArray.length;
+                    // Mudança de leitura para Amplitude Real (Mais sensível a ruídos e fala)
+                    analyser.getByteTimeDomainData(dataArray);
+                    let maxDeviation = 0;
+                    for (let i = 0; i < dataArray.length; i++) {
+                        let deviation = Math.abs(dataArray[i] - 128);
+                        if (deviation > maxDeviation) maxDeviation = deviation;
+                    }
                     
-                    // Mapeamento dinâmico de ganho de volume
-                    let volume = Math.min((average / 128) * 100, 100);
-                    
+                    let volume = (maxDeviation / 128) * 100;
                     volumeBar.style.width = volume + '%';
                     statusVolNum.innerText = Math.round(volume);
 
                     let thresh = parseFloat(gateSlider.value);
                     
-                    // Se houver som acima do gate, mostra a boca. Caso contrário, esconde.
                     if (volume > thresh) {
                         mouth.style.display = 'block';
                     } else {
