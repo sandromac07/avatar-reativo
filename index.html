@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Avatar Reativo com Importação de GIFs</title>
+    <style>
+        :root {
+            --bg-color: #121212;
+        }
+        
+        body {
+            background-color: var(--bg-color);
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        #avatar-area {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+            position: relative;
+        }
+
+        #avatar-container {
+            position: relative;
+            width: 500px;  
+            height: 500px; 
+            border: 2px dashed rgba(255, 255, 255, 0.2);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .idle-img {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            z-index: 1;
+            pointer-events: none;
+            display: none;
+        }
+
+        .mouth-img {
+            position: absolute;
+            z-index: 2;
+            display: none; /* Começa oculta, mas ficará block ao importar */
+            object-fit: contain;
+            pointer-events: none;
+            outline: 1px dashed #ffeb3b; 
+        }
+
+        #control-panel {
+            width: 350px;
+            background: rgba(20, 20, 20, 0.95);
+            border-left: 1px solid #333;
+            height: 100vh;
+            position: fixed;
+            right: 0;
+            top: 0;
+            padding: 20px;
+            box-sizing: border-box;
+            overflow-y: auto;
+            z-index: 100;
+            transition: transform 0.3s ease;
+            box-shadow: -5px 0 15px rgba(0,0,0,0.5);
+        }
+
+        #control-panel.hidden {
+            transform: translateX(100%);
+        }
+
+        #toggle-panel-btn {
+            position: fixed;
+            right: 20px;
+            top: 20px;
+            z-index: 101;
+            background: #2196f3;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+
+        h3 {
+            border-bottom: 1px solid #444;
+            padding-bottom: 8px;
+            color: #2196f3;
+            margin-top: 15px;
+        }
+
+        .control-group {
+            margin-bottom: 18px;
+        }
+
+        .control-group label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+            margin-bottom: 5px;
+            color: #ccc;
+        }
+
+        .control-group label span {
+            color: #2196f3;
+            font-weight: bold;
+        }
+
+        input[type="range"] {
+            width: 100%;
+        }
+
+        input[type="file"] {
+            width: 100%;
+            background: #222;
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #444;
+            color: #ccc;
+            font-size: 12px;
+            box-sizing: border-box;
+        }
+
+        button {
+            width: 100%;
+            padding: 10px;
+            background: #4caf50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-bottom: 10px;
+        }
+
+        button:hover { opacity: 0.9; }
+        .secondary-btn { background: #555; }
+
+        .volume-bar-container {
+            width: 100%;
+            height: 20px;
+            background: #222;
+            margin-top: 8px;
+            border-radius: 4px;
+            overflow: hidden;
+            position: relative;
+            border: 1px solid #444;
+        }
+
+        #volume-bar {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #4caf50, #ffeb3b);
+            transition: width 0.05s ease;
+        }
+
+        #gate-indicator {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 3px;
+            background: #f44336;
+            box-shadow: 0 0 4px #f44336;
+        }
+
+        textarea {
+            width: 100%;
+            height: 80px;
+            background: #000;
+            color: #00ff00;
+            font-family: monospace;
+            border: 1px solid #333;
+            padding: 5px;
+            box-sizing: border-box;
+            resize: none;
+            font-size: 11px;
+            margin-top: 5px;
+        }
+
+        .placeholder-text {
+            color: #666;
+            font-size: 14px;
+            position: absolute;
+            text-align: center;
+            z-index: 0;
+        }
+    </style>
+</head>
+<body>
+
+    <button id="toggle-panel-btn">Configurações</button>
+
+    <div id="avatar-area">
+        <div id="placeholder" class="placeholder-text">Importe os GIFs no painel ao lado <br> para começar</div>
+        <div id="avatar-container">
+            <img id="idle" class="idle-img" src="" alt="Personagem Parado">
+            <img id="mouth" class="mouth-img" src="" alt="Boca Falando">
+        </div>
+    </div>
+
+    <div id="control-panel">
+        <h3>Importar Imagens (GIFs)</h3>
+        <div class="control-group">
+            <label>1. Personagem Parado (Idle):</label>
+            <input type="file" id="upload-idle" accept="image/gif">
+        </div>
+        <div class="control-group">
+            <label>2. Recorte da Boca:</label>
+            <input type="file" id="upload-mouth" accept="image/gif">
+        </div>
+
+        <h3>Microfone & Gate</h3>
+        <button id="start-btn">3. Ativar Microfone</button>
+        
+        <div id="audio-controls" style="opacity: 0.5; pointer-events: none;">
+            <div class="control-group">
+                <label for="gate-slider">Noise Gate (Sensibilidade): <span id="gate-value">20</span></label>
+                <input type="range" id="gate-slider" min="0" max="100" value="20">
+                <div class="volume-bar-container">
+                    <div id="volume-bar"></div>
+                    <div id="gate-indicator"></div>
+                </div>
+            </div>
+        </div>
+
+        <h3>Posicionamento da Boca</h3>
+        <div class="control-group">
+            <label>Posição Vertical (Top): <span id="top-value">180</span>px</label>
+            <input type="range" id="slider-top" min="-100" max="600" value="180">
+        </div>
+
+        <div class="control-group">
+            <label>Posição Horizontal (Left): <span id="left-value">150</span>px</label>
+            <input type="range" id="slider-left" min="-100" max="600" value="150">
+        </div>
+
+        <div class="control-group">
+            <label>Largura (Width): <span id="width-value">80</span>px</label>
+            <input type="range" id="slider-width" min="10" max="500" value="80">
+        </div>
+
+        <div class="control-group">
+            <label>Altura (Height): <span id="height-value">50</span>px</label>
+            <input type="range" id="slider-height" min="10" max="500" value="50">
+        </div>
+
+        <h3>Utilidades</h3>
+        <button class="secondary-btn" id="bg-btn">Alternar Fundo (Chroma Key)</button>
+        <button class="secondary-btn" id="border-btn">Ocultar Linhas de Guia</button>
+        
+        <label style="font-size: 12px; color: #aaa;">Copie este CSS final para usar fixo:</label>
+        <textarea id="css-output" readonly></textarea>
+    </div>
+
+    <script>
+        const idle = document.getElementById('idle');
+        const mouth = document.getElementById('mouth');
+        const container = document.getElementById('avatar-container');
+        const placeholder = document.getElementById('placeholder');
+
+        const uploadIdle = document.getElementById('upload-idle');
+        const uploadMouth = document.getElementById('upload-mouth');
+
+        const sliders = {
+            top: { input: document.getElementById('slider-top'), val: document.getElementById('top-value'), unit: 'px', prop: 'top' },
+            left: { input: document.getElementById('slider-left'), val: document.getElementById('left-value'), unit: 'px', prop: 'left' },
+            width: { input: document.getElementById('slider-width'), val: document.getElementById('width-value'), unit: 'px', prop: 'width' },
+            height: { input: document.getElementById('slider-height'), val: document.getElementById('height-value'), unit: 'px', prop: 'height' }
+        };
+
+        const gateSlider = document.getElementById('gate-slider');
+        const gateValue = document.getElementById('gate-value');
+        const volumeBar = document.getElementById('volume-bar');
+        const gateIndicator = document.getElementById('gate-indicator');
+        const cssOutput = document.getElementById('css-output');
+        
+        const startBtn = document.getElementById('start-btn');
+        const audioControls = document.getElementById('audio-controls');
+        const controlPanel = document.getElementById('control-panel');
+        const togglePanelBtn = document.getElementById('toggle-panel-btn');
+        const bgBtn = document.getElementById('bg-btn');
+        const borderBtn = document.getElementById('border-btn');
+
+        let audioContext, analyser, dataArray;
+        let isChroma = false;
+        let showGuides = true;
+        let micActive = false; // Flag para saber se o microfone já assumiu o controle
+
+        function handleImageUpload(file, storageKey, imgElement) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    localStorage.setItem(storageKey, e.target.result);
+                } catch (err) {
+                    console.warn("Arquivo grande para o cache, mas funcionará nesta sessão.");
+                }
+                imgElement.src = e.target.result;
+                imgElement.style.display = 'block'; // Força a exibição imediata para permitir ajuste físico!
+                checkPlaceholder();
+            };
+            reader.readAsDataURL(file);
+        }
+
+        uploadIdle.addEventListener('change', (e) => {
+            if (e.target.files[0]) handleImageUpload(e.target.files[0], 'avatar-img-idle', idle);
+        });
+
+        uploadMouth.addEventListener('change', (e) => {
+            if (e.target.files[0]) handleImageUpload(e.target.files[0], 'avatar-img-mouth', mouth);
+        });
+
+        function checkPlaceholder() {
+            if (idle.src && idle.src !== window.location.href) {
+                placeholder.style.display = 'none';
+            }
+        }
+
+        function loadSettings() {
+            Object.keys(sliders).forEach(key => {
+                const savedValue = localStorage.getItem(`avatar-${key}`);
+                if (savedValue !== null) sliders[key].input.value = savedValue;
+            });
+            const savedGate = localStorage.getItem('avatar-gate');
+            if (savedGate !== null) gateSlider.value = savedGate;
+
+            const savedImgIdle = localStorage.getItem('avatar-img-idle');
+            if (savedImgIdle) {
+                idle.src = savedImgIdle;
+                idle.style.display = 'block';
+            }
+            const savedImgMouth = localStorage.getItem('avatar-img-mouth');
+            if (savedImgMouth) {
+                mouth.src = savedImgMouth;
+                mouth.style.style = 'block'; 
+                mouth.style.display = 'block'; // Garante visibilidade inicial de ajuste
+            }
+
+            checkPlaceholder();
+            updateAvatarStyles();
+        }
+
+        function updateAvatarStyles() {
+            Object.keys(sliders).forEach(key => {
+                const item = sliders[key];
+                const value = item.input.value;
+                item.val.innerText = value;
+                mouth.style[item.prop] = value + item.unit;
+                localStorage.setItem(`avatar-${key}`, value);
+            });
+
+            gateValue.innerText = gateSlider.value;
+            gateIndicator.style.left = gateSlider.value + '%';
+            localStorage.setItem('avatar-gate', gateSlider.value);
+
+            cssOutput.value = `.mouth-img {\n  top: ${sliders.top.input.value}px;\n  left: ${sliders.left.input.value}px;\n  width: ${sliders.width.input.value}px;\n  height: ${sliders.height.input.value}px;\n}`;
+        }
+
+        Object.keys(sliders).forEach(key => {
+            sliders[key].input.addEventListener('input', updateAvatarStyles);
+        });
+        gateSlider.addEventListener('input', updateAvatarStyles);
+
+        togglePanelBtn.addEventListener('click', () => {
+            controlPanel.classList.toggle('hidden');
+            togglePanelBtn.innerText = controlPanel.classList.contains('hidden') ? "Configurações" : "Fechar Painel";
+        });
+
+        bgBtn.addEventListener('click', () => {
+            isChroma = !isChroma;
+            document.documentElement.style.setProperty('--bg-color', isChroma ? '#00ff00' : '#121212');
+        });
+
+        borderBtn.addEventListener('click', () => {
+            showGuides = !showGuides;
+            container.style.border = showGuides ? "2px dashed rgba(255, 255, 255, 0.2)" : "none";
+            mouth.style.outline = showGuides ? "1px dashed #ffeb3b" : "none";
+            borderBtn.innerText = showGuides ? "Ocultar Linhas de Guia" : "Mostrar Linhas de Guia";
+            
+            // Se o microfone não estiver ativo, mantemos a boca visível para ajustes
+            if(!micActive && mouth.src && mouth.src !== window.location.href) {
+                mouth.style.display = 'block';
+            }
+        });
+
+        startBtn.addEventListener('click', async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const source = audioContext.createMediaStreamSource(stream);
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 256;
+                source.connect(analyser);
+                
+                const bufferLength = analyser.frequencyBinCount;
+                dataArray = new Uint8Array(bufferLength);
+
+                startBtn.style.display = 'none';
+                audioControls.style.opacity = '1';
+                audioControls.style.pointerEvents = 'auto';
+                micActive = true; // Microfone ativado com sucesso!
+
+                function processAudio() {
+                    analyser.getByteFrequencyData(dataArray);
+
+                    let total = 0;
+                    for (let i = 0; i < bufferLength; i++) { total += dataArray[i]; }
+                    let average = total / bufferLength;
+                    let volume = Math.min((average / 120) * 100, 100); 
+
+                    volumeBar.style.width = volume + '%';
+                    let threshold = parseFloat(gateSlider.value);
+
+                    if (volume > threshold && mouth.src && mouth.src !== window.location.href) {
+                        mouth.style.display = 'block';
+                    } else {
+                        mouth.style.display = 'none';
+                    }
+
+                    requestAnimationFrame(processAudio);
+                }
+
+                processAudio();
+            } catch (err) {
+                alert('Erro de permissão! Ative um servidor local (veja as instruções) para liberar o microfone.');
+            }
+        });
+
+        loadSettings();
+    </script>
+</body>
+</html>
